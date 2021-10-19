@@ -2,8 +2,13 @@ package data
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
+	"regexp"
 	"time"
+
+	validation "github.com/go-ozzo/ozzo-validation"
 )
 
 type Product struct {
@@ -17,6 +22,26 @@ type Product struct {
 	DeletedOn   string  `json:"-"`
 }
 
+func (p Product) Validate() error {
+	return validation.ValidateStruct(&p,
+		validation.Field(&p.Name, validation.Required),
+		validation.Field(&p.Price, validation.Required, validation.Min(1.0)),
+		validation.Field(&p.SKU, validation.Required, validation.By(validateSKU)),
+	)
+}
+
+func validateSKU(value interface{}) error {
+	s, _ := value.(string)
+
+	re := regexp.MustCompile(`[a-z]+-[a-z]+-[a-z]+`)
+	matches := re.FindAllString(s, -1)
+	if len(matches) != 1 {
+		return errors.New("invalid SKU")
+	}
+
+	return nil
+}
+
 func (p *Product) FromJSON(r io.Reader) error {
 	e := json.NewDecoder(r)
 	return e.Decode(p)
@@ -25,6 +50,26 @@ func (p *Product) FromJSON(r io.Reader) error {
 func AddProduct(p *Product) {
 	p.ID = getNextID()
 	productList = append(productList, p)
+}
+func UpdateProduct(id int, p *Product) error {
+	_, pos, err := findProduct(id)
+	if err != nil {
+		return err
+	}
+	p.ID = id
+	productList[pos] = p
+	return nil
+}
+
+var ErrProductNotFound = fmt.Errorf("Product not found")
+
+func findProduct(id int) (*Product, int, error) {
+	for i, p := range productList {
+		if p.ID == id {
+			return p, i, nil
+		}
+	}
+	return nil, -1, ErrProductNotFound
 }
 
 func getNextID() int {
